@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sword & Magic Duel - Perfect Edition</title>
+    <style>
+        body {
+            margin: 0;
+            background: #222;
+            color: white;
+            font-family: sans-serif;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        #game-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            justify-content: space-between;
+        }
+
+        /* 操作パネル */
+        .panel {
+            width: 22%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+            padding: 5px;
+            background: #333;
+            z-index: 100;
+        }
+        button {
+            height: 12%;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            border: 2px solid #555;
+            background: #444;
+            color: white;
+            border-radius: 6px;
+        }
+        button:active { background: #666; }
+        .strong-atk { color: #ff4444; border-color: #ff4444; visibility: hidden; }
+        .unlocked { visibility: visible; }
+        
+        /* バトル画面 */
+        #stage {
+            flex-grow: 1;
+            position: relative;
+            background: linear-gradient(#444, #111);
+            overflow: hidden;
+        }
+
+        /* HPエリア */
+        .hp-area {
+            position: absolute;
+            top: 15px;
+            width: 45%;
+            text-align: center;
+        }
+        #hp-p1-area { left: 2%; }
+        #hp-p2-area { right: 2%; }
+        .hp-bar-container {
+            width: 100%;
+            height: 15px;
+            background: #000;
+            border: 2px solid #fff;
+            margin-bottom: 3px;
+        }
+        .hp-fill { height: 100%; width: 100%; transition: width 0.4s; background: #00ff00; }
+        .hp-num { font-size: 14px; font-weight: bold; }
+
+        /* キャラクター */
+        .char {
+            position: absolute;
+            bottom: 25%;
+            font-size: 60px;
+            transition: all 0.4s ease-out;
+            z-index: 10;
+        }
+        #p1-char { left: 10%; }
+        #p2-char { right: 10%; transform: scaleX(-1); }
+        
+        /* 魔法（火の玉） */
+        .fireball {
+            position: absolute;
+            bottom: 35%; /* キャラクターの胴体あたりの高さ */
+            font-size: 40px;
+            z-index: 20;
+            display: none;
+            transition: all 0.5s linear;
+        }
+
+        /* エフェクト */
+        .spark {
+            position: absolute;
+            bottom: 35%;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            z-index: 30;
+            display: none;
+            animation: spark-anim 0.4s forwards;
+        }
+        @keyframes spark-anim {
+            0% { transform: translateX(-50%) scale(1); opacity: 1; }
+            100% { transform: translateX(-50%) scale(3); opacity: 0; }
+        }
+
+        .dmg-num {
+            position: absolute;
+            bottom: 50%;
+            color: #ff4444;
+            font-size: 36px;
+            font-weight: bold;
+            text-shadow: 2px 2px #000;
+            z-index: 40;
+            animation: dmg-float 0.8s forwards;
+            display: none;
+        }
+        @keyframes dmg-float {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-60px); opacity: 0; }
+        }
+
+        /* 勝利・画面揺れ */
+        @keyframes jump { 0%, 100% { bottom: 25%; } 50% { bottom: 45%; } }
+        .win-jump { animation: jump 0.5s infinite; }
+        @keyframes shake { 0%, 100% { transform: translate(0,0); } 25% { transform: translate(-8px, 8px); } 75% { transform: translate(8px, -8px); } }
+        .shake { animation: shake 0.2s; }
+
+        /* 紙吹雪 */
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            z-index: 5;
+            animation: fall 3s linear forwards;
+        }
+        @keyframes fall { to { transform: translateY(100vh) rotate(720deg); } }
+
+        #message-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            z-index: 50;
+        }
+        #message-text { font-size: 20px; background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 10px; text-align: center; }
+        #retry-btn {
+            margin-top: 20px; padding: 15px 30px; font-size: 20px;
+            pointer-events: auto; display: none;
+            background: #ff4444; color: white; border: none; border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div class="panel" id="p1-panel">
+        <button onclick="select(1, 'こうげき')">こうげき</button>
+        <button onclick="select(1, 'まほう')">まほう</button>
+        <button onclick="select(1, 'カウンター')">カウンター</button>
+        <button onclick="select(1, 'ぼうぎょ')">ぼうぎょ</button>
+        <button onclick="select(1, 'さける')">さける</button>
+        <button id="p1-strong" class="strong-atk" onclick="select(1, '強こうげき')">強こうげき</button>
+        <button onclick="select(1, 'こうさん')">こうさん</button>
+    </div>
+
+    <div id="stage">
+        <div id="hp-p1-area" class="hp-area">
+            <div class="hp-bar-container"><div id="hp-p1-fill" class="hp-fill"></div></div>
+            <div class="hp-num">HP: <span id="hp-p1-val">200</span></div>
+        </div>
+        <div id="hp-p2-area" class="hp-area">
+            <div class="hp-bar-container"><div id="hp-p2-fill" class="hp-fill"></div></div>
+            <div class="hp-num">HP: <span id="hp-p2-val">200</span></div>
+        </div>
+        
+        <div id="p1-char" class="char">🤺</div>
+        <div id="p2-char" class="char">🧙</div>
+        
+        <div id="p1-fire" class="fireball">🔥</div>
+        <div id="p2-fire" class="fireball">🔥</div>
+        <div id="main-spark" class="spark">💥</div>
+        <div id="p1-dmg" class="dmg-num"></div>
+        <div id="p2-dmg" class="dmg-num"></div>
+
+        <div id="message-overlay">
+            <div id="message-text">コマンドを選択...</div>
+            <button id="retry-btn" onclick="location.reload()">もう一度遊ぶ</button>
+        </div>
+    </div>
+
+    <div class="panel" id="p2-panel">
+        <button onclick="select(2, 'こうげき')">こうげき</button>
+        <button onclick="select(2, 'まほう')">まほう</button>
+        <button onclick="select(2, 'カウンター')">カウンター</button>
+        <button onclick="select(2, 'ぼうぎょ')">ぼうぎょ</button>
+        <button onclick="select(2, 'さける')">さける</button>
+        <button id="p2-strong" class="strong-atk" onclick="select(2, '強こうげき')">強こうげき</button>
+        <button onclick="select(2, 'こうさん')">こうさん</button>
+    </div>
+</div>
+
+<script>
+    let p1 = { id:1, hp: 200, cmd: null, char: document.getElementById('p1-char'), fill: document.getElementById('hp-p1-fill'), val: document.getElementById('hp-p1-val'), btn: document.getElementById('p1-strong'), fire: document.getElementById('p1-fire'), dmg: document.getElementById('p1-dmg') };
+    let p2 = { id:2, hp: 200, cmd: null, char: document.getElementById('p2-char'), fill: document.getElementById('hp-p2-fill'), val: document.getElementById('hp-p2-val'), btn: document.getElementById('p2-strong'), fire: document.getElementById('p2-fire'), dmg: document.getElementById('p2-dmg') };
+    let isAnimating = false;
+
+    function select(player, cmd) {
+        if (isAnimating) return;
+        if (cmd === 'こうさん') { endGame(player === 1 ? 2 : 1, "降参しました"); return; }
+        if (player === 1) { p1.cmd = cmd; document.getElementById('p1-panel').style.opacity = '0.2'; }
+        else { p2.cmd = cmd; document.getElementById('p2-panel').style.opacity = '0.2'; }
+        if (p1.cmd && p2.cmd) execute();
+    }
+
+    function showSpark(size) {
+        const spark = document.getElementById('main-spark');
+        spark.style.display = 'block';
+        spark.style.fontSize = size + 'px';
+        setTimeout(() => { spark.style.display = 'none'; }, 400);
+    }
+
+    function showDmg(p, amount) {
+        if (amount <= 0) return;
+        p.dmg.innerText = "-" + amount;
+        p.dmg.style.display = 'block';
+        p.dmg.style.left = (p.id === 1 ? '15%' : '70%');
+        setTimeout(() => { p.dmg.style.display = 'none'; }, 800);
+    }
+
+    function createConfetti() {
+        for(let i=0; i<60; i++) {
+            const c = document.createElement('div');
+            c.className = 'confetti';
+            c.style.left = Math.random() * 100 + '%';
+            c.style.backgroundColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            c.style.top = '-10px';
+            c.style.animationDuration = (Math.random() * 2 + 2) + 's';
+            c.style.animationDelay = Math.random() * 2 + 's';
+            document.getElementById('stage').appendChild(c);
+        }
+    }
+
+    async function execute() {
+        isAnimating = true;
+        const msg = document.getElementById('message-text');
+        const stage = document.getElementById('stage');
+
+        // 位置演出
+        if (p1.cmd === 'さける') p1.char.style.left = '0%';
+        else if (p1.cmd.includes('こうげき') || p1.cmd === 'カウンター') p1.char.style.left = '40%';
+        if (p2.cmd === 'さける') p2.char.style.right = '0%';
+        else if (p2.cmd.includes('こうげき') || p2.cmd === 'カウンター') p2.char.style.right = '40%';
+
+        // 魔法演出（位置をリセットしてから飛ばす）
+        if (p1.cmd === 'まほう') {
+            p1.fire.style.display='block'; p1.fire.style.left='15%'; p1.fire.style.right='auto';
+            setTimeout(()=>p1.fire.style.left='80%', 50);
+        }
+        if (p2.cmd === 'まほう') {
+            p2.fire.style.display='block'; p2.fire.style.right='15%'; p2.fire.style.left='auto';
+            setTimeout(()=>p2.fire.style.right='80%', 50);
+        }
+
+        await new Promise(r => setTimeout(r, 600));
+
+        let d1 = 0, d2 = 0;
+        let p1Atk = p1.cmd === '強こうげき' ? 80 : 40;
+        let p2Atk = p2.cmd === '強こうげき' ? 80 : 40;
+
+        // ダメージ計算
+        if (p1.cmd.includes('こうげき')) {
+            if (p2.cmd.includes('こうげき')) { d1=40; d2=40; msg.innerText="相打ち！"; showSpark(50); }
+            else if (p2.cmd==='まほう') { d1=40; msg.innerText="魔法が先着！"; }
+            else if (p2.cmd==='カウンター') { d1=p2Atk*2; msg.innerText="カウンター！"; showSpark(100); }
+            else if (p2.cmd==='ぼうぎょ') { d2=p1Atk/2; msg.innerText="ガード！"; showSpark(30); }
+            else if (p2.cmd==='さける') { msg.innerText="回避！"; }
+            else { d2=p1Atk; msg.innerText="ヒット！"; showSpark(60); }
+        } else if (p1.cmd==='まほう' && p2.cmd!=='さける') d2=40;
+
+        if (p2.cmd.includes('こうげき')) {
+            if (p1.cmd==='カウンター') { d2=p1Atk*2; msg.innerText="カウンター！"; showSpark(100); }
+            else if (p1.cmd==='ぼうぎょ') { d1=p2Atk/2; showSpark(30); }
+            else if (p1.cmd!=='さける' && !p1.cmd.includes('こうげき')) { d1=p2Atk; showSpark(60); }
+        } else if (p2.cmd==='まほう' && p1.cmd!=='さける') d1=40;
+
+        if (d1>0 || d2>0) {
+            stage.classList.add('shake');
+            showDmg(p1, d1); showDmg(p2, d2);
+            setTimeout(() => stage.classList.remove('shake'), 200);
+        }
+
+        p1.hp = Math.max(0, p1.hp - d1); p2.hp = Math.max(0, p2.hp - d2);
+        p1.fill.style.width = (p1.hp/200*100)+'%'; p2.fill.style.width = (p2.hp/200*100)+'%';
+        p1.val.innerText = p1.hp; p2.val.innerText = p2.hp;
+
+        if (p1.hp <= 100) p1.btn.classList.add('unlocked');
+        if (p2.hp <= 100) p2.btn.classList.add('unlocked');
+
+        await new Promise(r => setTimeout(r, 800));
+        p1.fire.style.display=p2.fire.style.display='none';
+        p1.char.style.left = '10%'; p2.char.style.right = '10%';
+        
+        if (p1.hp <= 0 || p2.hp <= 0) {
+            endGame(p1.hp > p2.hp ? 1 : (p2.hp > p1.hp ? 2 : 0), "決着！");
+        } else {
+            p1.cmd = p2.cmd = null;
+            document.getElementById('p1-panel').style.opacity = '1';
+            document.getElementById('p2-panel').style.opacity = '1';
+            isAnimating = false;
+        }
+    }
+
+    function endGame(winner, reason) {
+        const msg = document.getElementById('message-text');
+        if (winner === 1) {
+            msg.innerText = "1Pの勝利！\n" + reason;
+            p1.char.classList.add('win-jump');
+            createConfetti();
+        } else if (winner === 2) {
+            msg.innerText = "2Pの勝利！\n" + reason;
+            p2.char.classList.add('win-jump');
+            createConfetti();
+        } else {
+            msg.innerText = "引き分け！";
+        }
+        document.getElementById('retry-btn').style.display = 'block';
+    }
+</script>
+</body>
+</html>
