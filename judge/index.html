@@ -1,1 +1,332 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ジャッジ">
+    
+    <title>ジャッジ</title>
+    <style>
+        :root { 
+            --side-width: 110px; 
+            --safe-left: env(safe-area-inset-left);
+            --safe-right: env(safe-area-inset-right);
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+        body { 
+            margin: 0; padding: 0; background-color: #111; 
+            font-family: 'Hiragino Kaku Gothic ProN', sans-serif; 
+            overflow: hidden; touch-action: none; display: flex; height: 100vh; width: 100vw;
+            -webkit-text-size-adjust: 100%;
+        }
+        .bg-style { background-color: #87ceeb; background-image: url('cloud_bg.png'); background-size: cover; background-position: center; }
 
+        /* 縦画面警告アニメーション */
+        #orientation-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); z-index: 10000;
+            flex-direction: column; align-items: center; justify-content: center; color: white;
+        }
+        @media (orientation: portrait) { #orientation-overlay { display: flex; } }
+        .rotate-icon { font-size: 80px; margin-bottom: 20px; animation: rotateDevice 2s ease-in-out infinite; }
+        @keyframes rotateDevice { 0% { transform: rotate(0deg); } 30% { transform: rotate(-90deg); } 70% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+
+        /* サイド操作パネル */
+        .player-side { 
+            width: calc(var(--side-width) + var(--safe-left)); 
+            display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.9); 
+            z-index: 500; flex-shrink: 0; box-sizing: border-box;
+            padding: 10px 0 calc(10px + var(--safe-bottom));
+        }
+        .player-side.right-side { width: calc(var(--side-width) + var(--safe-right)); }
+        
+        .controls { 
+            flex-grow: 1; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;
+            padding-left: calc(5px + var(--safe-left)); padding-right: 5px;
+        }
+        .right-side .controls { padding-left: 5px; padding-right: calc(5px + var(--safe-right)); }
+        
+        .life-container { 
+            height: 80px; display: flex; align-items: center; justify-content: center; 
+            border-top: 1px solid #333; border-bottom: 1px solid #333; margin: 5px 0;
+            width: 100%; overflow: hidden;
+        }
+        /* ハートの表示調整 (iPhone 2段) */
+        .life { color: #ff4444; font-size: 1.3rem; display: block; text-align: center; line-height: 1.1; width: 100%; white-space: pre-wrap; letter-spacing: -2px; }
+
+        .btn { flex: 1; border: none; border-radius: 12px; font-size: 1.1rem; font-weight: 900; color: white; display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; text-orientation: upright; width: 100%; transition: 0.1s; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.6); }
+        .btn-hit { background-color: #e63946; }
+        .btn-dodge { background-color: #457b9d; }
+        .btn:active { transform: translateY(2px); box-shadow: none; }
+
+        #game-world { flex-grow: 1; position: relative; overflow: hidden; height: 100vh; }
+
+        /* タイトル画面 */
+        #title-screen { 
+            position: absolute; top:0; left:0; width:100%; height:100%; z-index: 5000; 
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 0.5s ease;
+        }
+        .title-container { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; position: relative; }
+        .img-title-logo { width: 42%; height: 80vh; object-fit: contain; pointer-events: none; animation: floatAnim 3s ease-in-out infinite; }
+        .img-title-player { width: 42%; height: 80vh; object-fit: contain; pointer-events: none; animation: floatAnim 3s ease-in-out 0.5s infinite; }
+        .title-menu { position: absolute; bottom: 15%; left: 50%; transform: translateX(-50%); z-index: 5100; }
+        .start-btn { padding: 15px 60px; font-size: 1.5rem; background: rgba(46, 213, 115, 0.8); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 3px solid white; border-radius: 50px; color: #fff; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .start-btn:active { transform: scale(0.95); }
+
+        /* バージョン表記 (復活) */
+        .version-tag { 
+            position: absolute; top: calc(15px + var(--safe-top)); right: calc(15px + var(--safe-right)); 
+            color: white; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; 
+            z-index: 5200;
+        }
+
+        /* READY GO 演出 */
+        #ready-go {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 5rem; font-weight: 900; color: #fff; text-shadow: 4px 4px 0 #000;
+            z-index: 2000; pointer-events: none; display: none;
+        }
+
+        /* キャラクター */
+        .character { position: absolute; bottom: calc(5% + var(--safe-bottom)); width: 45vh; height: 45vh; z-index: 30; transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), right 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s; }
+        .character img { width: 100%; height: 100%; object-fit: contain; }
+        #char-p2 img { transform: scaleX(-1); }
+        .floating { animation: floatAnim 2.5s ease-in-out infinite; }
+        @keyframes floatAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+
+        /* リザルト画面 */
+        #result-screen { position: absolute; top:0; left:0; width:100%; height:100%; z-index: 6000; display: none; background: rgba(0,0,0,0.95); flex-direction: row; align-items: center; justify-content: space-evenly; }
+        .win-logo { width: 85%; max-width: 460px; position: absolute; top: -20%; z-index: 6010; opacity: 0; transition: 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .winner-img { height: 75vh; position: absolute; top: 18%; z-index: 6005; opacity: 0; transform: scale(0.8); transition: 0.6s 0.2s; }
+        .show-res { opacity: 1 !important; transform: translate(0) scale(1) !important; }
+
+        .placard { position: absolute; width: 100px; height: 140px; background: #fff; border: 5px solid #222; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 2.5rem; font-weight: 900; top: 15%; opacity: 0; transition: 0.2s; z-index: 20; }
+        .placard.active { opacity: 1; }
+        #card-p1 { left: 10%; } #card-p2 { right: 10%; }
+        .hammer-img { position: absolute; width: 15vh; z-index: 100; display: none; pointer-events: none; }
+        .pop-text { position: absolute; font-size: 1.8rem; font-weight: bold; opacity: 0; z-index: 200; text-shadow: 2px 2px 0 #000; top: 40%; color: white; transition: 0.2s; }
+    </style>
+</head>
+<body onload="updateLifeUI()">
+    <div id="orientation-overlay">
+        <div class="rotate-icon">📱</div>
+        <div class="warning-text">画面を横にしてね</div>
+    </div>
+
+    <div id="ready-go">READY</div>
+
+    <div id="title-screen" class="bg-style">
+        <div class="version-tag">v1.0.1</div>
+        <div class="title-container">
+            <img src="title_logo.svg" class="img-title-logo">
+            <img src="title_player.svg" class="img-title-player">
+            <div class="title-menu">
+                <button class="start-btn" onclick="startSequence()">ゲームスタート</button>
+            </div>
+            <div class="copyright" style="position:absolute; bottom:calc(8px + var(--safe-bottom)); color:white; font-size:0.8rem; font-weight:bold;">© 2025 Yoshida Studio</div>
+        </div>
+    </div>
+
+    <div id="result-screen">
+        <div style="position:relative; width:60%; height:100%; display:flex; justify-content:center;">
+            <img id="win-logo-img" src="win.svg" class="win-logo">
+            <img id="winner-image" src="" class="winner-img">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 15px; width: 30%; align-items: center; z-index: 7000;">
+            <button onclick="startSequence()" style="padding:15px 40px; font-size:1.2rem; background:#2ed573; border:none; border-radius:40px; color:#fff; font-weight:bold; cursor:pointer;">もういちど</button>
+            <button onclick="location.reload()" style="background:none; border:1px solid #fff; color:#fff; padding:10px 20px; border-radius:20px; cursor:pointer;">タイトルへ</button>
+        </div>
+    </div>
+
+    <div class="player-side">
+        <div class="controls">
+            <button class="btn btn-hit" onpointerdown="handleAction(1, 'HIT')">たたく</button>
+            <div class="life-container"><div class="life" id="life-p1"></div></div>
+            <button class="btn btn-dodge" onpointerdown="handleAction(1, 'DODGE')">さける</button>
+        </div>
+    </div>
+    
+    <div id="game-world" class="bg-style">
+        <div style="position: absolute; top: calc(10px + var(--safe-top)); left: 50%; transform: translateX(-50%); z-index: 500; display: flex; align-items: center; gap: 15px;">
+            <div style="background: rgba(0,0,0,0.85); color: white; padding: 5px 15px; border-radius: 50px; border: 2px solid #ffd700; display: flex; align-items: center; gap: 8px;">
+                <img id="ui-hammer-img" src="hammer1.svg" style="width:22px; height:22px;">
+                <div id="ui-hammer-dmg" style="color:#ff4d4d; font-size:1.1rem; font-weight:900;">1</div>
+            </div>
+            <div style="width: 35px; height: 35px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 2px solid #333;" onclick="location.reload()">🏠</div>
+        </div>
+
+        <div id="card-p1" class="placard">?</div>
+        <div id="card-p2" class="placard">?</div>
+        
+        <div id="char-p1" class="character" style="left: -50%;"><img src="player1.svg"></div>
+        <div id="char-p2" class="character" style="right: -50%;"><img src="player2.svg"></div>
+        
+        <img id="hammer-p1" class="hammer-img" src="hammer1.svg">
+        <img id="hammer-p2" class="hammer-img" src="hammer1.svg">
+        
+        <div id="pop-p1" class="pop-text" style="left: 15%;"></div>
+        <div id="pop-p2" class="pop-text" style="right: 15%;"></div>
+    </div>
+
+    <div class="player-side right-side">
+        <div class="controls">
+            <button class="btn btn-hit" onpointerdown="handleAction(2, 'HIT')">たたく</button>
+            <div class="life-container"><div class="life" id="life-p2"></div></div>
+            <button class="btn btn-dodge" onpointerdown="handleAction(2, 'DODGE')">さける</button>
+        </div>
+    </div>
+
+    <script>
+        let p1 = { life: 6, num: 0 }, p2 = { life: 6, num: 0 }, gameState = 'TITLE', currentDmg = 1;
+
+        function updateLifeUI() {
+            const format = (l) => {
+                let h = "❤".repeat(Math.max(0, l)).split('');
+                if(h.length > 3) h.splice(3, 0, '\n');
+                return h.join('');
+            };
+            document.getElementById('life-p1').textContent = format(p1.life);
+            document.getElementById('life-p2').textContent = format(p2.life);
+        }
+
+        function startSequence() {
+            const title = document.getElementById('title-screen');
+            const result = document.getElementById('result-screen');
+            const rg = document.getElementById('ready-go');
+            const cp1 = document.getElementById('char-p1');
+            const cp2 = document.getElementById('char-p2');
+
+            title.style.opacity = '0';
+            result.style.display = 'none';
+            document.getElementById('win-logo-img').classList.remove('show-res');
+            document.getElementById('winner-image').classList.remove('show-res');
+            setTimeout(() => { title.style.display = 'none'; }, 500);
+
+            p1.life = 6; p2.life = 6; updateLifeUI();
+            cp1.style.left = '-50%'; cp2.style.right = '-50%';
+            cp1.classList.remove('floating'); cp2.classList.remove('floating');
+
+            // 1. キャラクター登場
+            setTimeout(() => { cp1.style.left = '5%'; cp2.style.right = '5%'; }, 600);
+            // 2. READY
+            setTimeout(() => { rg.style.display = 'block'; rg.textContent = 'READY'; }, 1200);
+            // 3. GO!
+            setTimeout(() => { rg.textContent = 'GO!'; }, 2000);
+            // 4. 開始
+            setTimeout(() => {
+                rg.style.display = 'none';
+                cp1.classList.add('floating'); cp2.classList.add('floating');
+                pickHammer(); startRound();
+            }, 2600);
+        }
+
+        function pickHammer() {
+            currentDmg = Math.random() < 0.6 ? 1 : Math.random() < 0.9 ? 2 : 3;
+            const src = `hammer${currentDmg}.svg`;
+            document.getElementById('ui-hammer-img').src = src;
+            document.getElementById('ui-hammer-dmg').textContent = currentDmg;
+            document.querySelectorAll('.hammer-img').forEach(h => h.src = src);
+        }
+
+        function startRound() {
+            gameState = 'BATTLE';
+            document.querySelectorAll('.placard').forEach(p => p.classList.remove('active'));
+            setTimeout(() => {
+                if(gameState !== 'BATTLE') return;
+                p1.num = Math.floor(Math.random()*100); p2.num = Math.floor(Math.random()*100);
+                document.getElementById('card-p1').textContent = p1.num;
+                document.getElementById('card-p2').textContent = p2.num;
+                document.querySelectorAll('.placard').forEach(p => p.classList.add('active'));
+            }, 1000 + Math.random()*1500);
+        }
+
+        function handleAction(pid, action) {
+            if(gameState !== 'BATTLE') return;
+            const active = document.querySelector('.placard.active');
+            if(!active) { showPop(pid, "おてつき!"); applyDamage(pid, 1, false); return; }
+            const isWin = (pid === 1) ? (p1.num >= p2.num) : (p2.num >= p1.num);
+            if(action === 'HIT') throwHammer(pid, isWin); else dodgeMove(pid, isWin);
+        }
+
+        function throwHammer(pid, isWin) {
+            gameState = 'ANIMATING';
+            const hammer = document.getElementById(`hammer-p${pid}`);
+            const targetX = pid === 1 ? 75 : 25;
+            hammer.style.display = 'block';
+            hammer.animate([
+                { left: (pid===1?15:85)+'%', bottom: '30%', transform: 'rotate(0deg)' },
+                { left: '50%', bottom: '65%', transform: 'rotate(180deg)' },
+                { left: targetX+'%', bottom: '35%', transform: 'rotate(360deg)' }
+            ], { duration: 500, easing: 'ease-out' }).onfinish = () => {
+                hammer.style.display = 'none';
+                if(isWin) { createParticles(targetX); applyDamage(pid===1?2:1, currentDmg, true); }
+                else { showPop(pid, "MISS!"); applyDamage(pid, 1, false); }
+            };
+        }
+
+        function createParticles(x) {
+            for (let i = 0; i < 8; i++) {
+                const p = document.createElement('div');
+                p.style.cssText = `position:absolute; width:8px; height:8px; background:#ffeb3b; border-radius:50%; left:${x}%; bottom:40%; z-index:200;`;
+                document.getElementById('game-world').appendChild(p);
+                const a = Math.random()*Math.PI*2, d = 40+Math.random()*60;
+                p.animate([{opacity:1, transform:'translate(0,0)'}, {opacity:0, transform:`translate(${Math.cos(a)*d}px,${Math.sin(a)*d}px)`}], 500).onfinish=()=>p.remove();
+            }
+        }
+
+        function applyDamage(pid, val, knock) {
+            if(pid===1) p1.life-=val; else p2.life-=val;
+            updateLifeUI();
+            const char = document.getElementById(`char-p${pid}`);
+            char.style.filter = "brightness(2)";
+            if(knock) {
+                const side = pid===1?'left':'right';
+                char.style[side] = '-45%';
+                setTimeout(() => { char.style.filter = "none"; if(gameState !== 'FINISH') char.style[side] = '5%'; }, 500);
+            } else {
+                setTimeout(() => { char.style.filter = "none"; }, 300);
+            }
+            if(p1.life<=0 || p2.life<=0) {
+                gameState = 'FINISH';
+                setTimeout(() => showResult(p1.life<=0 ? 2 : 1), 600);
+            } else if(gameState === 'ANIMATING') {
+                setTimeout(() => { pickHammer(); startRound(); }, 1000);
+            }
+        }
+
+        function dodgeMove(pid, isWin) {
+            gameState = 'ANIMATING';
+            const char = document.getElementById(`char-p${pid}`);
+            const side = pid===1?'left':'right';
+            char.style[side] = '-10%';
+            setTimeout(() => {
+                char.style[side] = '5%';
+                if(!isWin) { pickHammer(); startRound(); }
+                else { showPop(pid, "MISS!"); applyDamage(pid, 1, false); }
+            }, 400);
+        }
+
+        function showPop(pid, txt) {
+            const el = document.getElementById(`pop-p${pid}`);
+            el.textContent = txt; el.style.opacity = '1';
+            setTimeout(()=>el.style.opacity='0', 800);
+        }
+
+        function showResult(winner) {
+            document.getElementById('winner-image').src = `player${winner}_win.svg`;
+            document.getElementById('result-screen').style.display = 'flex';
+            setTimeout(() => {
+                document.getElementById('win-logo-img').classList.add('show-res');
+                document.getElementById('winner-image').classList.add('show-res');
+            }, 100);
+        }
+    </script>
+</body>
+</html>
