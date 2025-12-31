@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sword & Magic Duel - Perfect Edition</title>
+    <title>Sword & Magic Duel - Final Balance</title>
     <style>
         body {
             margin: 0;
@@ -87,7 +87,7 @@
         /* 魔法（火の玉） */
         .fireball {
             position: absolute;
-            bottom: 35%; /* キャラクターの胴体あたりの高さ */
+            bottom: 35%;
             font-size: 40px;
             z-index: 20;
             display: none;
@@ -255,13 +255,11 @@
         const msg = document.getElementById('message-text');
         const stage = document.getElementById('stage');
 
-        // 位置演出
         if (p1.cmd === 'さける') p1.char.style.left = '0%';
         else if (p1.cmd.includes('こうげき') || p1.cmd === 'カウンター') p1.char.style.left = '40%';
         if (p2.cmd === 'さける') p2.char.style.right = '0%';
         else if (p2.cmd.includes('こうげき') || p2.cmd === 'カウンター') p2.char.style.right = '40%';
 
-        // 魔法演出（位置をリセットしてから飛ばす）
         if (p1.cmd === 'まほう') {
             p1.fire.style.display='block'; p1.fire.style.left='15%'; p1.fire.style.right='auto';
             setTimeout(()=>p1.fire.style.left='80%', 50);
@@ -274,26 +272,42 @@
         await new Promise(r => setTimeout(r, 600));
 
         let d1 = 0, d2 = 0;
-        let p1Atk = p1.cmd === '強こうげき' ? 80 : 40;
-        let p2Atk = p2.cmd === '強こうげき' ? 80 : 40;
+        let p1Atk = (p1.cmd === '強こうげき') ? 80 : 40;
+        let p2Atk = (p2.cmd === '強こうげき') ? 80 : 40;
 
-        // ダメージ計算
+        // P1側の行動判定
         if (p1.cmd.includes('こうげき')) {
-            if (p2.cmd.includes('こうげき')) { d1=40; d2=40; msg.innerText="相打ち！"; showSpark(50); }
-            else if (p2.cmd==='まほう') { d1=40; msg.innerText="魔法が先着！"; }
-            else if (p2.cmd==='カウンター') { d1=p2Atk*2; msg.innerText="カウンター！"; showSpark(100); }
-            else if (p2.cmd==='ぼうぎょ') { d2=p1Atk/2; msg.innerText="ガード！"; showSpark(30); }
-            else if (p2.cmd==='さける') { msg.innerText="回避！"; }
-            else { d2=p1Atk; msg.innerText="ヒット！"; showSpark(60); }
-        } else if (p1.cmd==='まほう' && p2.cmd!=='さける') d2=40;
+            if (p2.cmd.includes('こうげき')) { 
+                d1 = p2Atk; d2 = p1Atk; msg.innerText = "相打ち！"; showSpark(p1Atk + 20); 
+            } else if (p2.cmd === 'まほう') { 
+                d1 = 40; msg.innerText = "魔法が先着！"; 
+            } else if (p2.cmd === 'カウンター') { 
+                d1 = p1Atk * 2; msg.innerText = "倍返しカウンター！"; showSpark(120); 
+            } else if (p2.cmd === 'ぼうぎょ') { 
+                d2 = p1Atk / 2; msg.innerText = "ガード！"; showSpark(30); 
+            } else if (p2.cmd === 'さける') { 
+                msg.innerText = "回避！"; 
+            } else { 
+                d2 = p1Atk; msg.innerText = (p1.cmd === '強こうげき') ? "強撃的中！" : "ヒット！"; showSpark(p1Atk + 20); 
+            }
+        } else if (p1.cmd === 'まほう' && p2.cmd !== 'さける') {
+            d2 = 40;
+        }
 
+        // P2側の行動判定（P1が近接攻撃以外だった場合などの補完）
         if (p2.cmd.includes('こうげき')) {
-            if (p1.cmd==='カウンター') { d2=p1Atk*2; msg.innerText="カウンター！"; showSpark(100); }
-            else if (p1.cmd==='ぼうぎょ') { d1=p2Atk/2; showSpark(30); }
-            else if (p1.cmd!=='さける' && !p1.cmd.includes('こうげき')) { d1=p2Atk; showSpark(60); }
-        } else if (p2.cmd==='まほう' && p1.cmd!=='さける') d1=40;
+            if (p1.cmd === 'カウンター') { 
+                d2 = p2Atk * 2; msg.innerText = "倍返しカウンター！"; showSpark(120); 
+            } else if (p1.cmd === 'ぼうぎょ') { 
+                d1 = p2Atk / 2; showSpark(30); 
+            } else if (p1.cmd !== 'さける' && !p1.cmd.includes('こうげき')) { 
+                d1 = p2Atk; showSpark(p2Atk + 20); 
+            }
+        } else if (p2.cmd === 'まほう' && p1.cmd !== 'さける') {
+            d1 = 40;
+        }
 
-        if (d1>0 || d2>0) {
+        if (d1 > 0 || d2 > 0) {
             stage.classList.add('shake');
             showDmg(p1, d1); showDmg(p2, d2);
             setTimeout(() => stage.classList.remove('shake'), 200);
@@ -307,7 +321,7 @@
         if (p2.hp <= 100) p2.btn.classList.add('unlocked');
 
         await new Promise(r => setTimeout(r, 800));
-        p1.fire.style.display=p2.fire.style.display='none';
+        p1.fire.style.display = p2.fire.style.display = 'none';
         p1.char.style.left = '10%'; p2.char.style.right = '10%';
         
         if (p1.hp <= 0 || p2.hp <= 0) {
@@ -323,11 +337,11 @@
     function endGame(winner, reason) {
         const msg = document.getElementById('message-text');
         if (winner === 1) {
-            msg.innerText = "1Pの勝利！\n" + reason;
+            msg.innerText = "1Pの勝利！\n強烈な一撃が決まった！";
             p1.char.classList.add('win-jump');
             createConfetti();
         } else if (winner === 2) {
-            msg.innerText = "2Pの勝利！\n" + reason;
+            msg.innerText = "2Pの勝利！\n強烈な一撃が決まった！";
             p2.char.classList.add('win-jump');
             createConfetti();
         } else {
