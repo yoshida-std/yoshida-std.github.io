@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="manifest" href="manifest.json">
-    <title>Trampoline Pro - Final Tune</title>
+    <title>Trampoline Pro - Result Guard</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial Black', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
@@ -18,7 +18,7 @@
         }
         @media (orientation: portrait) { #orientation-warning { display: flex; } }
 
-        /* オーバーレイ */
+        /* オーバーレイ共通 */
         .full-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
@@ -29,6 +29,11 @@
             border: none; border-radius: 50px; cursor: pointer; font-family: 'Arial Black', sans-serif;
             box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
         }
+
+        /* ゲームオーバー画面固有 */
+        #gameOverOverlay h1 { color: #ff4444; font-size: 60px; margin: 0; }
+        #finalScore { font-size: 48px; color: #ffd700; margin: 20px 0; text-shadow: 0 0 15px rgba(255, 215, 0, 0.5); }
+        #retryGuide { font-size: 18px; color: #888; margin-top: 10px; }
 
         /* 下部操作エリア */
         .controls { 
@@ -41,12 +46,8 @@
             border: 2px solid #888; border-radius: 12px; display: flex; 
             justify-content: center; align-items: center; color: #fff; font-size: 22px; user-select: none;
         }
-        .btn-home { 
-            width: 15%; height: 45px; font-size: 22px; background: #222; border-color: #555; 
-        }
-        .btn:active { background: #555; border-color: #00f2fe; }
+        .btn-home { width: 15%; height: 45px; font-size: 22px; background: #222; border-color: #555; }
 
-        /* 情報表示 */
         .info { 
             position: absolute; top: 10px; width: 100%; text-align: center;
             color: #fff; pointer-events: none; z-index: 10;
@@ -70,9 +71,9 @@
     </div>
 
     <div id="gameOverOverlay" class="full-overlay" style="display: none;">
-        <h1 style="color:#ff4444; font-size: 50px;">TIME UP!</h1>
-        <div id="finalScore" style="font-size: 28px; margin-bottom: 20px;">Score: 0</div>
-        <p>TAP TO RETURN</p>
+        <h1>TIME UP!</h1>
+        <div id="finalScore">Score: 0</div>
+        <div id="retryGuide">PLEASE WAIT...</div>
     </div>
 
     <div class="info">
@@ -100,8 +101,10 @@ const progressEl = document.getElementById('levelProgress');
 const overlay = document.getElementById('overlay');
 const gameOverOverlay = document.getElementById('gameOverOverlay');
 const finalScoreEl = document.getElementById('finalScore');
+const retryGuide = document.getElementById('retryGuide');
 
 let isGameRunning = false;
+let canReturnToTitle = false; // リザルト画面で戻れるかどうかのフラグ
 let score = 0;
 let timeLeft = 100;
 let timerInterval;
@@ -137,6 +140,7 @@ function resetState() {
     timerEl.innerText = "TIME: 100";
     progressEl.innerText = "0";
     ballCountEl.innerText = "1";
+    canReturnToTitle = false;
 }
 
 function getNewBallData() {
@@ -185,9 +189,13 @@ document.getElementById('homeBtn').onclick = () => {
     gameOverOverlay.style.display = 'none';
 };
 
+// リザルト画面でのタップ処理
 gameOverOverlay.onclick = () => {
-    gameOverOverlay.style.display = 'none';
-    overlay.style.display = 'flex';
+    if (canReturnToTitle) {
+        gameOverOverlay.style.display = 'none';
+        overlay.style.display = 'flex';
+        resetState();
+    }
 };
 
 function endGame() {
@@ -195,6 +203,17 @@ function endGame() {
     clearInterval(timerInterval);
     finalScoreEl.innerText = `Score: ${score}`;
     gameOverOverlay.style.display = 'flex';
+    
+    // 誤操作防止用のクールタイム設定
+    canReturnToTitle = false;
+    retryGuide.innerText = "PLEASE WAIT...";
+    retryGuide.style.color = "#888";
+
+    setTimeout(() => {
+        canReturnToTitle = true;
+        retryGuide.innerText = "TAP TO RETURN";
+        retryGuide.style.color = "#00f2fe";
+    }, 2000); // 2秒間待機
 }
 
 let left = false, right = false;
