@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="manifest" href="manifest.json">
-    <title>Trampoline Pro - Level System</title>
+    <title>Trampoline Pro - Score Pop</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial Black', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
@@ -20,13 +19,6 @@
             border: none; border-radius: 50px; cursor: pointer; font-family: 'Arial Black', sans-serif;
             box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
         }
-
-        #orientation-warning {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; color: white; z-index: 100; flex-direction: column; 
-            justify-content: center; align-items: center; text-align: center;
-        }
-        @media (orientation: portrait) { #orientation-warning { display: flex; } }
 
         .controls { 
             position: absolute; bottom: 0; width: 100%; height: 85px; 
@@ -48,11 +40,6 @@
     </style>
 </head>
 <body>
-
-<div id="orientation-warning">
-    <div style="font-size: 50px;">🔄</div>
-    <p>画面を横向きに回転させてください</p>
-</div>
 
 <div id="game-container">
     <div id="overlay">
@@ -86,7 +73,7 @@ const startBtn = document.getElementById('startBtn');
 let isGameRunning = false;
 let score = 0;
 let totalGoals = 0;
-let streakGoals = 0; // 次のボール追加までの連続ゴール数
+let streakGoals = 0;
 let activeBalls = [];
 let droppedBalls = [];
 let popMessages = [];
@@ -102,32 +89,40 @@ resize();
 const player = {
     x: 0,
     get y() { return canvas.height - 110; },
-    w: 140, h: 20, bend: 0, speed: 18
+    w: 140, h: 20, bend: 0, speed: 24
 };
 player.x = canvas.width / 2 - 70;
 
-function createBall() {
+function getNewBallData() {
     const launchPoints = [
-        { x: 40,  vx: 3,   vy: -1 },
-        { x: 100, vx: 2,   vy: -2 },
-        { x: 160, vx: 1.5, vy: -5 },
-        { x: 220, vx: 0.5, vy: -3 },
-        { x: 280, vx: -1,  vy: -2 }
+        { x: 50,  vx: 2.5, vy: -1.5 },
+        { x: 120, vx: 2,   vy: -2 },
+        { x: 200, vx: 1.5, vy: -5 },
+        { x: 280, vx: 0.5, vy: -3 },
+        { x: 350, vx: -1,  vy: -2 }
     ];
     const p = launchPoints[Math.floor(Math.random() * launchPoints.length)];
-    armAngle = Math.PI;
     return {
-        originX: p.x,
-        x: p.x, y: 70, radius: 10,
-        vx: p.vx, vy: p.vy, gravity: 0.2,
-        color: `hsl(${Math.random() * 360}, 80%, 60%)`
+        originX: p.x, x: p.x, y: 70, radius: 10,
+        vx: p.vx, vy: p.vy, gravity: 0.18,
+        color: `hsl(${Math.random() * 360}, 80%, 60%)`,
+        isWaiting: false
     };
+}
+
+function respawnBall(index) {
+    activeBalls[index].isWaiting = true;
+    setTimeout(() => {
+        if (!isGameRunning) return;
+        activeBalls[index] = getNewBallData();
+        armAngle = Math.PI;
+    }, 1200);
 }
 
 startBtn.onclick = () => {
     overlay.style.display = 'none';
     isGameRunning = true;
-    if(activeBalls.length === 0) activeBalls.push(createBall());
+    if(activeBalls.length === 0) activeBalls.push(getNewBallData());
 };
 
 let left = false, right = false;
@@ -136,15 +131,8 @@ document.getElementById('leftBtn').ontouchend = () => left = false;
 document.getElementById('rightBtn').ontouchstart = (e) => { e.preventDefault(); right = true; };
 document.getElementById('rightBtn').ontouchend = () => right = false;
 
-function addPopMessage(text, x, y, color) {
-    popMessages.push({text, x, y, life: 1.0, color});
-}
-
-function handleMiss(b, i) {
-    streakGoals = 0; // ミスでレベルアップ用カウントをリセット
-    addPopMessage("MISS...", b.x, b.y, "#ff0000");
-    droppedBalls.push({...b, y: canvas.height - 85 - b.radius});
-    activeBalls[i] = createBall();
+function addPopMessage(text, x, y, color, fontSize = 30) {
+    popMessages.push({text, x, y, life: 1.0, color, fontSize});
 }
 
 function update() {
@@ -154,48 +142,56 @@ function update() {
     player.bend *= 0.85;
 
     popMessages.forEach((m, i) => {
-        m.y -= 1; m.life -= 0.02;
+        m.y -= 1.5; m.life -= 0.02;
         if (m.life <= 0) popMessages.splice(i, 1);
     });
 
     activeBalls.forEach((b, i) => {
+        if (b.isWaiting) return;
+
         b.vy += b.gravity; b.x += b.vx; b.y += b.vy;
 
-        // トランポリン衝突
+        if (b.x < b.radius) {
+            b.x = b.radius;
+            b.vx *= -0.8;
+        }
+
         if (b.y + b.radius > player.y && b.y < player.y + player.h &&
             b.x > player.x && b.x < player.x + player.w && b.vy > 0) {
             player.bend = Math.min(b.vy * 4, 40);
-            b.vy *= -1.08;
+            b.vy *= -1.06;
             b.y = player.y - b.radius;
-            b.radius += 3; score += 1;
+            b.radius += 3.5;
+            score += 1;
             b.vx += (b.x - (player.x + player.w/2)) * 0.08;
         }
 
-        // ミス判定1: 地面
         if (b.y > canvas.height - 85 - b.radius) {
-            handleMiss(b, i);
-        }
-        // ミス判定2: 左端
-        else if (b.x < -b.radius) {
-            handleMiss(b, i);
+            streakGoals = 0;
+            addPopMessage("MISS...", b.x, b.y, "#ff4444", 25);
+            droppedBalls.push({...b, y: canvas.height - 85 - b.radius});
+            respawnBall(i);
         }
 
-        // 右端ゴール
         if (b.x > canvas.width + b.radius) {
-            score += Math.floor(b.radius * 10);
+            const points = Math.floor(b.radius * 10);
+            score += points;
             totalGoals++;
             streakGoals++;
-            addPopMessage("OK!", canvas.width - 60, b.y, "#00ff00");
             
-            // 5連続ゴールでボール追加
-            if (streakGoals >= 5) {
-                if (activeBalls.length < 20) {
-                    activeBalls.push(createBall());
-                    addPopMessage("LEVEL UP!", canvas.width / 2, canvas.height / 2, "#ffd700");
-                }
-                streakGoals = 0; // 追加されたらカウントリセット
+            // ポイントに応じてサイズを変える (最小30, 最大80程度)
+            const dynamicSize = Math.min(30 + (points / 5), 80);
+            addPopMessage(`+${points}`, canvas.width - 80, b.y, "#00ff00", dynamicSize);
+            
+            if (streakGoals >= 5 && activeBalls.length < 20) {
+                activeBalls.push({isWaiting: true});
+                respawnBall(activeBalls.length - 1);
+                addPopMessage("LEVEL UP!", canvas.width / 2, canvas.height / 2, "#ffd700", 50);
+                streakGoals = 0;
+            } else if (streakGoals >= 5) {
+                streakGoals = 0;
             }
-            activeBalls[i] = createBall();
+            respawnBall(i);
         }
     });
     armAngle *= 0.88;
@@ -204,7 +200,11 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    ctx.fillStyle = "rgba(0, 242, 254, 0.2)";
+    ctx.fillRect(0, 0, 4, canvas.height - 85);
+
     activeBalls.forEach(b => {
+        if (b.isWaiting) return;
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         const py = 75;
         ctx.beginPath(); ctx.arc(b.originX, py-25, 7, 0, Math.PI*2); ctx.stroke();
@@ -216,45 +216,46 @@ function draw() {
     });
 
     droppedBalls.forEach(b => {
-        ctx.globalAlpha = 0.3; ctx.fillStyle = b.color;
+        ctx.globalAlpha = 0.2; ctx.fillStyle = b.color;
         ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
     });
     ctx.globalAlpha = 1.0;
 
-    // トランポリン
-    ctx.fillStyle = "#444";
-    ctx.fillRect(player.x, player.y, player.w, 8);
-    ctx.strokeStyle = "#00f2fe"; ctx.lineWidth = 3;
+    ctx.fillStyle = "#333";
+    ctx.fillRect(player.x, player.y, player.w, 10);
+    ctx.strokeStyle = "#00f2fe"; ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(player.x + 10, player.y + 4);
-    ctx.quadraticCurveTo(player.x + player.w/2, player.y + 4 + player.bend, player.x + player.w - 10, player.y + 4);
+    ctx.moveTo(player.x + 10, player.y + 5);
+    ctx.quadraticCurveTo(player.x + player.w/2, player.y + 5 + player.bend, player.x + player.w - 10, player.y + 5);
     ctx.stroke();
-    ctx.fillStyle = "#666";
-    ctx.fillRect(player.x + 8, player.y + 8, 5, 12);
-    ctx.fillRect(player.x + player.w - 13, player.y + 8, 5, 12);
+    ctx.fillStyle = "#555";
+    ctx.fillRect(player.x + 10, player.y + 10, 6, 10);
+    ctx.fillRect(player.x + player.w - 16, player.y + 10, 6, 10);
 
-    // 玉
     activeBalls.forEach(b => {
+        if (b.isWaiting) return;
         ctx.shadowBlur = 15; ctx.shadowColor = b.color;
         ctx.fillStyle = b.color;
         ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
-        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
-        ctx.fillText(`+${Math.floor(b.radius*10)}`, b.x, b.y - b.radius - 5);
     });
 
     popMessages.forEach(m => {
         ctx.globalAlpha = m.life;
         ctx.fillStyle = m.color;
-        ctx.font = m.text === "LEVEL UP!" ? "bold 40px Arial" : "bold 30px Arial";
+        ctx.font = `bold ${m.fontSize}px Arial`;
         ctx.textAlign = "center";
+        // 縁取りを入れて読みやすく
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 4;
+        ctx.strokeText(m.text, m.x, m.y);
         ctx.fillText(m.text, m.x, m.y);
     });
     ctx.globalAlpha = 1.0;
 
     scoreEl.innerText = score;
     goalEl.innerText = totalGoals;
-    ballCountEl.innerText = activeBalls.length;
+    ballCountEl.innerText = activeBalls.filter(b => !b.isWaiting).length;
     progressEl.innerText = streakGoals;
 }
 
