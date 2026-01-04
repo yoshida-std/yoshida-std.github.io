@@ -2,7 +2,7 @@
   "name": "Trampoline High Jump",
   "short_name": "TrampJump",
   "start_url": ".",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#050505",
   "theme_color": "#00f2fe",
