@@ -4,11 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="manifest" href="manifest.json">
-    <title>Trampoline Pro</title>
+    <title>Trampoline Pro - 5 Launch Points</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial Black', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
         canvas { display: block; background: radial-gradient(circle at 30% 20%, #1a1a2e 0%, #050505 100%); }
+
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 50;
+        }
+        #startBtn {
+            padding: 20px 50px; font-size: 30px; color: #fff; background: #00f2fe;
+            border: none; border-radius: 50px; cursor: pointer; font-family: 'Arial Black', sans-serif;
+            box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
+        }
 
         #orientation-warning {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -27,13 +38,12 @@
             border: 2px solid #888; border-radius: 12px; display: flex; 
             justify-content: center; align-items: center; color: #fff; font-size: 28px; user-select: none;
         }
-        .btn:active { background: #555; border-color: #00f2fe; color: #00f2fe; }
 
         .info { 
             position: absolute; top: 10px; width: 100%; text-align: center;
             color: #fff; pointer-events: none; z-index: 10;
         }
-        #scoreDisplay { font-size: 32px; color: #00f2fe; text-shadow: 0 0 10px rgba(0,242,254,0.5); }
+        #scoreDisplay { font-size: 32px; color: #00f2fe; }
     </style>
 </head>
 <body>
@@ -44,11 +54,17 @@
 </div>
 
 <div id="game-container">
+    <div id="overlay">
+        <h1 style="color:#00f2fe; margin-bottom:30px;">TRAMPOLINE JUMP</h1>
+        <button id="startBtn">GAME START</button>
+    </div>
+
     <div class="info">
         <div id="scoreDisplay">0</div>
-        <div style="font-size: 12px; color: #888;">GOALS: <span id="goalCount">0</span> | BALLS: <span id="ballCount">1</span></div>
+        <div style="font-size: 12px; color: #888;">GOALS: <span id="goalCount">0</span> | BALLS: <span id="ballCount">1</span> / 20</div>
     </div>
     <canvas id="gameCanvas"></canvas>
+    
     <div class="controls">
         <div class="btn" id="leftBtn">LEFT</div>
         <div class="btn" id="rightBtn">RIGHT</div>
@@ -61,6 +77,16 @@ const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('scoreDisplay');
 const goalEl = document.getElementById('goalCount');
 const ballCountEl = document.getElementById('ballCount');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let isGameRunning = false;
+let score = 0;
+let goals = 0;
+let activeBalls = [];
+let droppedBalls = [];
+let goalMessages = [];
+let armAngle = 0;
 
 function resize() {
     canvas.width = window.innerWidth;
@@ -69,31 +95,37 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-let score = 0;
-let goals = 0;
-let activeBalls = [];
-let droppedBalls = [];
-let goalMessages = []; // 「OK!」メッセージ用
-let armAngle = 0;
-
 const player = {
-    x: canvas.width / 2 - 70,
-    get y() { return canvas.height - 100; }, // ボタンの少し上
+    x: 0,
+    get y() { return canvas.height - 110; },
     w: 140, h: 20, bend: 0, speed: 18
 };
+player.x = canvas.width / 2 - 70;
 
+// 5つの投入地点パターン
 function createBall() {
-    const patterns = [{vx: 3, vy: -2}, {vx: 5.5, vy: 1}, {vx: 2, vy: -8}];
-    const p = patterns[Math.floor(Math.random() * patterns.length)];
+    const launchPoints = [
+        { x: 40,  vx: 3,   vy: -1 },
+        { x: 100, vx: 2,   vy: -2 },
+        { x: 160, vx: 1.5, vy: -5 },
+        { x: 220, vx: 0.5, vy: -3 },
+        { x: 280, vx: -1,  vy: -2 }
+    ];
+    const p = launchPoints[Math.floor(Math.random() * launchPoints.length)];
     armAngle = Math.PI;
     return {
-        x: 40, y: 70, radius: 10,
-        vx: p.vx, vy: p.vy, gravity: 0.25,
+        originX: p.x, // 投げる人の描画位置用
+        x: p.x, y: 70, radius: 10,
+        vx: p.vx, vy: p.vy, gravity: 0.2,
         color: `hsl(${Math.random() * 360}, 80%, 60%)`
     };
 }
 
-activeBalls.push(createBall());
+startBtn.onclick = () => {
+    overlay.style.display = 'none';
+    isGameRunning = true;
+    if(activeBalls.length === 0) activeBalls.push(createBall());
+};
 
 let left = false, right = false;
 document.getElementById('leftBtn').ontouchstart = (e) => { e.preventDefault(); left = true; };
@@ -101,12 +133,23 @@ document.getElementById('leftBtn').ontouchend = () => left = false;
 document.getElementById('rightBtn').ontouchstart = (e) => { e.preventDefault(); right = true; };
 document.getElementById('rightBtn').ontouchend = () => right = false;
 
+function drawPerson(x) {
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    const py = 75;
+    ctx.beginPath(); ctx.arc(x, py-25, 7, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, py-18); ctx.lineTo(x, py); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, py-14);
+    ctx.lineTo(x + Math.cos(armAngle)*20, py-14 + Math.sin(armAngle)*20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x-7, py+12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x+7, py+12); ctx.stroke();
+}
+
 function update() {
+    if (!isGameRunning) return;
     if (left && player.x > 0) player.x -= player.speed;
     if (right && player.x < canvas.width - player.w) player.x += player.speed;
     player.bend *= 0.85;
 
-    // メッセージの更新
     goalMessages.forEach((m, i) => {
         m.y -= 1; m.life -= 0.02;
         if (m.life <= 0) goalMessages.splice(i, 1);
@@ -117,10 +160,11 @@ function update() {
 
         if (b.y + b.radius > player.y && b.y < player.y + player.h &&
             b.x > player.x && b.x < player.x + player.w && b.vy > 0) {
-            player.bend = Math.min(b.vy * 5, 45);
-            b.vy *= -1.18; b.y = player.y - b.radius;
+            player.bend = Math.min(b.vy * 4, 40);
+            b.vy *= -1.08;
+            b.y = player.y - b.radius;
             b.radius += 3; score += 1;
-            b.vx += (b.x - (player.x + player.w/2)) * 0.1;
+            b.vx += (b.x - (player.x + player.w/2)) * 0.08;
         }
 
         if (b.y > canvas.height - 85 - b.radius) {
@@ -132,71 +176,58 @@ function update() {
         if (b.x > canvas.width + b.radius) {
             score += Math.floor(b.radius * 10);
             goals++;
-            // OK!メッセージ生成
             goalMessages.push({x: canvas.width - 60, y: b.y, life: 1.0});
-            if (goals % 5 === 0) activeBalls.push(createBall());
+            if (goals % 5 === 0 && activeBalls.length < 20) activeBalls.push(createBall());
             activeBalls[i] = createBall();
         }
     });
-    scoreEl.innerText = score;
-    goalEl.innerText = goals;
-    ballCountEl.innerText = activeBalls.length;
+    armAngle *= 0.88;
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 人
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
-    const px = 30, py = 75;
-    ctx.beginPath(); ctx.arc(px, py-25, 7, 0, Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(px, py-18); ctx.lineTo(px, py); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(px, py-14);
-    ctx.lineTo(px + Math.cos(armAngle)*20, py-14 + Math.sin(armAngle)*20); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px-7, py+12); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px+7, py+12); ctx.stroke();
-    armAngle *= 0.88;
+    // 投げている人をそれぞれのボールのoriginXに合わせて描画
+    activeBalls.forEach(b => drawPerson(b.originX));
 
-    // 地面の玉
     droppedBalls.forEach(b => {
         ctx.globalAlpha = 0.3; ctx.fillStyle = b.color;
         ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
     });
     ctx.globalAlpha = 1.0;
 
-    // トランポリンのデザイン描画
-    // 1. フレーム(横棒)
-    ctx.fillStyle = "#555";
-    ctx.fillRect(player.x, player.y, player.w, 6);
-    // 2. ネット(しなり部分)
+    // トランポリン
+    ctx.fillStyle = "#444";
+    ctx.fillRect(player.x, player.y, player.w, 8);
     ctx.strokeStyle = "#00f2fe"; ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(player.x + 10, player.y + 3);
-    ctx.quadraticCurveTo(player.x + player.w/2, player.y + 3 + player.bend, player.x + player.w - 10, player.y + 3);
+    ctx.moveTo(player.x + 10, player.y + 4);
+    ctx.quadraticCurveTo(player.x + player.w/2, player.y + 4 + player.bend, player.x + player.w - 10, player.y + 4);
     ctx.stroke();
-    // 3. 支柱(脚)
-    ctx.fillStyle = "#888";
-    ctx.fillRect(player.x + 5, player.y + 6, 6, 15);
-    ctx.fillRect(player.x + player.w - 11, player.y + 6, 6, 15);
+    ctx.fillStyle = "#666";
+    ctx.fillRect(player.x + 8, player.y + 8, 5, 12);
+    ctx.fillRect(player.x + player.w - 13, player.y + 8, 5, 12);
 
-    // アクティブな玉
+    // 玉
     activeBalls.forEach(b => {
         ctx.shadowBlur = 15; ctx.shadowColor = b.color;
         ctx.fillStyle = b.color;
         ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
-        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial";
-        ctx.fillText(`+${Math.floor(b.radius*10)}`, b.x - 10, b.y - b.radius - 5);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+        ctx.fillText(`+${Math.floor(b.radius*10)}`, b.x, b.y - b.radius - 5);
     });
 
-    // 「OK!」メッセージ
     goalMessages.forEach(m => {
         ctx.globalAlpha = m.life;
-        ctx.fillStyle = "#00ff00";
-        ctx.font = "bold 30px Arial";
+        ctx.fillStyle = "#00ff00"; ctx.font = "bold 30px Arial";
         ctx.fillText("OK!", m.x, m.y);
     });
     ctx.globalAlpha = 1.0;
+
+    scoreEl.innerText = score;
+    goalEl.innerText = goals;
+    ballCountEl.innerText = activeBalls.length;
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
