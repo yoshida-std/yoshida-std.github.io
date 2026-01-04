@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="manifest" href="manifest.json">
-    <title>Trampoline Pro - 5 Launch Points</title>
+    <title>Trampoline Pro - Level System</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial Black', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
@@ -44,6 +44,7 @@
             color: #fff; pointer-events: none; z-index: 10;
         }
         #scoreDisplay { font-size: 32px; color: #00f2fe; }
+        .next-level { font-size: 14px; color: #ffd700; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -61,7 +62,8 @@
 
     <div class="info">
         <div id="scoreDisplay">0</div>
-        <div style="font-size: 12px; color: #888;">GOALS: <span id="goalCount">0</span> | BALLS: <span id="ballCount">1</span> / 20</div>
+        <div style="font-size: 12px; color: #888;">TOTAL GOALS: <span id="goalCount">0</span> | BALLS: <span id="ballCount">1</span> / 20</div>
+        <div class="next-level">NEXT BALL: <span id="levelProgress">0</span> / 5</div>
     </div>
     <canvas id="gameCanvas"></canvas>
     
@@ -77,15 +79,17 @@ const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('scoreDisplay');
 const goalEl = document.getElementById('goalCount');
 const ballCountEl = document.getElementById('ballCount');
+const progressEl = document.getElementById('levelProgress');
 const overlay = document.getElementById('overlay');
 const startBtn = document.getElementById('startBtn');
 
 let isGameRunning = false;
 let score = 0;
-let goals = 0;
+let totalGoals = 0;
+let streakGoals = 0; // 次のボール追加までの連続ゴール数
 let activeBalls = [];
 let droppedBalls = [];
-let goalMessages = [];
+let popMessages = [];
 let armAngle = 0;
 
 function resize() {
@@ -102,7 +106,6 @@ const player = {
 };
 player.x = canvas.width / 2 - 70;
 
-// 5つの投入地点パターン
 function createBall() {
     const launchPoints = [
         { x: 40,  vx: 3,   vy: -1 },
@@ -114,7 +117,7 @@ function createBall() {
     const p = launchPoints[Math.floor(Math.random() * launchPoints.length)];
     armAngle = Math.PI;
     return {
-        originX: p.x, // 投げる人の描画位置用
+        originX: p.x,
         x: p.x, y: 70, radius: 10,
         vx: p.vx, vy: p.vy, gravity: 0.2,
         color: `hsl(${Math.random() * 360}, 80%, 60%)`
@@ -133,15 +136,15 @@ document.getElementById('leftBtn').ontouchend = () => left = false;
 document.getElementById('rightBtn').ontouchstart = (e) => { e.preventDefault(); right = true; };
 document.getElementById('rightBtn').ontouchend = () => right = false;
 
-function drawPerson(x) {
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
-    const py = 75;
-    ctx.beginPath(); ctx.arc(x, py-25, 7, 0, Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x, py-18); ctx.lineTo(x, py); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x, py-14);
-    ctx.lineTo(x + Math.cos(armAngle)*20, py-14 + Math.sin(armAngle)*20); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x-7, py+12); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x+7, py+12); ctx.stroke();
+function addPopMessage(text, x, y, color) {
+    popMessages.push({text, x, y, life: 1.0, color});
+}
+
+function handleMiss(b, i) {
+    streakGoals = 0; // ミスでレベルアップ用カウントをリセット
+    addPopMessage("MISS...", b.x, b.y, "#ff0000");
+    droppedBalls.push({...b, y: canvas.height - 85 - b.radius});
+    activeBalls[i] = createBall();
 }
 
 function update() {
@@ -150,14 +153,15 @@ function update() {
     if (right && player.x < canvas.width - player.w) player.x += player.speed;
     player.bend *= 0.85;
 
-    goalMessages.forEach((m, i) => {
+    popMessages.forEach((m, i) => {
         m.y -= 1; m.life -= 0.02;
-        if (m.life <= 0) goalMessages.splice(i, 1);
+        if (m.life <= 0) popMessages.splice(i, 1);
     });
 
     activeBalls.forEach((b, i) => {
         b.vy += b.gravity; b.x += b.vx; b.y += b.vy;
 
+        // トランポリン衝突
         if (b.y + b.radius > player.y && b.y < player.y + player.h &&
             b.x > player.x && b.x < player.x + player.w && b.vy > 0) {
             player.bend = Math.min(b.vy * 4, 40);
@@ -167,17 +171,30 @@ function update() {
             b.vx += (b.x - (player.x + player.w/2)) * 0.08;
         }
 
+        // ミス判定1: 地面
         if (b.y > canvas.height - 85 - b.radius) {
-            b.y = canvas.height - 85 - b.radius;
-            droppedBalls.push({...b});
-            activeBalls[i] = createBall();
+            handleMiss(b, i);
+        }
+        // ミス判定2: 左端
+        else if (b.x < -b.radius) {
+            handleMiss(b, i);
         }
 
+        // 右端ゴール
         if (b.x > canvas.width + b.radius) {
             score += Math.floor(b.radius * 10);
-            goals++;
-            goalMessages.push({x: canvas.width - 60, y: b.y, life: 1.0});
-            if (goals % 5 === 0 && activeBalls.length < 20) activeBalls.push(createBall());
+            totalGoals++;
+            streakGoals++;
+            addPopMessage("OK!", canvas.width - 60, b.y, "#00ff00");
+            
+            // 5連続ゴールでボール追加
+            if (streakGoals >= 5) {
+                if (activeBalls.length < 20) {
+                    activeBalls.push(createBall());
+                    addPopMessage("LEVEL UP!", canvas.width / 2, canvas.height / 2, "#ffd700");
+                }
+                streakGoals = 0; // 追加されたらカウントリセット
+            }
             activeBalls[i] = createBall();
         }
     });
@@ -187,8 +204,16 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 投げている人をそれぞれのボールのoriginXに合わせて描画
-    activeBalls.forEach(b => drawPerson(b.originX));
+    activeBalls.forEach(b => {
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        const py = 75;
+        ctx.beginPath(); ctx.arc(b.originX, py-25, 7, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.originX, py-18); ctx.lineTo(b.originX, py); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.originX, py-14);
+        ctx.lineTo(b.originX + Math.cos(armAngle)*20, py-14 + Math.sin(armAngle)*20); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.originX, py); ctx.lineTo(b.originX-7, py+12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.originX, py); ctx.lineTo(b.originX+7, py+12); ctx.stroke();
+    });
 
     droppedBalls.forEach(b => {
         ctx.globalAlpha = 0.3; ctx.fillStyle = b.color;
@@ -218,16 +243,19 @@ function draw() {
         ctx.fillText(`+${Math.floor(b.radius*10)}`, b.x, b.y - b.radius - 5);
     });
 
-    goalMessages.forEach(m => {
+    popMessages.forEach(m => {
         ctx.globalAlpha = m.life;
-        ctx.fillStyle = "#00ff00"; ctx.font = "bold 30px Arial";
-        ctx.fillText("OK!", m.x, m.y);
+        ctx.fillStyle = m.color;
+        ctx.font = m.text === "LEVEL UP!" ? "bold 40px Arial" : "bold 30px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(m.text, m.x, m.y);
     });
     ctx.globalAlpha = 1.0;
 
     scoreEl.innerText = score;
-    goalEl.innerText = goals;
+    goalEl.innerText = totalGoals;
     ballCountEl.innerText = activeBalls.length;
+    progressEl.innerText = streakGoals;
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
