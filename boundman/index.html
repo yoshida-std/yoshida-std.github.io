@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trampoline Show</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: sans-serif; touch-action: none; }
+        canvas { display: block; background: linear-gradient(#16213e, #0f3460); }
+        .controls { position: fixed; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 40px; box-sizing: border-box; }
+        .btn { width: 80px; height: 80px; background: rgba(255,255,255,0.2); border: 2px solid #fff; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: white; font-size: 30px; user-select: none; }
+        .info { position: fixed; top: 10px; width: 100%; text-align: center; color: #e94560; font-weight: bold; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div class="info">SCORE: <span id="score">0</span></div>
+<canvas id="gameCanvas"></canvas>
+
+<div class="controls">
+    <div class="btn" id="leftBtn">←</div>
+    <div class="btn" id="rightBtn">→</div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+let goalCount = 0;
+let balls = [];
+let droppedBalls = [];
+
+// 投げる人のアニメーション用
+let throwerAngle = 0; 
+
+// トランポリン
+const trampoline = {
+    x: canvas.width / 2 - 70,
+    y: canvas.height - 120,
+    w: 140,
+    h: 15,
+    bend: 0, // しなり具合
+    speed: 15
+};
+
+function createBall() {
+    return {
+        x: 60,
+        y: 80,
+        radius: 12,
+        vx: 3 + Math.random() * 2,
+        vy: -2, // 少し上に投げ出す
+        gravity: 0.25,
+        color: `hsl(${Math.random() * 360}, 80%, 60%)`,
+        active: true
+    };
+}
+
+balls.push(createBall());
+
+// 操作系
+let leftPressed = false;
+let rightPressed = false;
+const setupBtn = (id, setter) => {
+    const btn = document.getElementById(id);
+    btn.ontouchstart = (e) => { e.preventDefault(); setter(true); };
+    btn.ontouchend = (e) => { e.preventDefault(); setter(false); };
+};
+setupBtn('leftBtn', v => leftPressed = v);
+setupBtn('rightBtn', v => rightPressed = v);
+
+function drawThrower() {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    const tx = 40, ty = 80;
+    
+    // 頭
+    ctx.beginPath(); ctx.arc(tx, ty - 30, 8, 0, Math.PI*2); ctx.stroke();
+    // 体
+    ctx.beginPath(); ctx.moveTo(tx, ty-22); ctx.lineTo(tx, ty); ctx.stroke();
+    // 足
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx-10, ty+15); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx+10, ty+15); ctx.stroke();
+    // 腕（アニメーション）
+    ctx.beginPath();
+    ctx.moveTo(tx, ty-18);
+    ctx.lineTo(tx + Math.cos(throwerAngle) * 20, ty - 18 + Math.sin(throwerAngle) * 20);
+    ctx.stroke();
+}
+
+function update() {
+    if (leftPressed && trampoline.x > 0) trampoline.x -= trampoline.speed;
+    if (rightPressed && trampoline.x < canvas.width - trampoline.w) trampoline.x += trampoline.speed;
+
+    // トランポリンのしなりを戻す物理
+    trampoline.bend *= 0.85;
+
+    balls.forEach((b, i) => {
+        b.vy += b.gravity;
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // トランポリン衝突
+        if (b.y + b.radius > trampoline.y + trampoline.bend && 
+            b.y < trampoline.y + trampoline.h &&
+            b.x > trampoline.x && b.x < trampoline.x + trampoline.w && b.vy > 0) {
+            
+            b.vy *= -1.15; // 弾力アップ
+            b.y = trampoline.y - b.radius;
+            b.radius += 4; // 巨大化
+            score += 1;
+            
+            // しなりを発生させる
+            trampoline.bend = 25; 
+            throwerAngle = 0; // ボールが弾むと投げた人も反応する演出
+        }
+
+        // 落下
+        if (b.y > canvas.height - b.radius) {
+            droppedBalls.push({...b});
+            balls[i] = createBall();
+            throwerAngle = Math.PI; // 投げるモーション
+        }
+
+        // ゴール
+        if (b.x > canvas.width + b.radius) {
+            score += Math.floor(b.radius * 10);
+            goalCount++;
+            if(goalCount % 5 === 0) balls.push(createBall());
+            balls[i] = createBall();
+            throwerAngle = Math.PI;
+        }
+    });
+
+    // 腕の角度を戻す
+    throwerAngle *= 0.9;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawThrower();
+
+    // 落ちた玉
+    droppedBalls.forEach(b => {
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+
+    // トランポリンの描画
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(trampoline.x, trampoline.y);
+    // カーブを描画（しなり）
+    ctx.quadraticCurveTo(
+        trampoline.x + trampoline.w / 2, 
+        trampoline.y + trampoline.bend * 2, 
+        trampoline.x + trampoline.w, 
+        trampoline.y
+    );
+    ctx.stroke();
+    // 足
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(trampoline.x + 10, trampoline.y); ctx.lineTo(trampoline.x + 10, trampoline.y + 20);
+    ctx.moveTo(trampoline.x + trampoline.w - 10, trampoline.y); ctx.lineTo(trampoline.x + trampoline.w - 10, trampoline.y + 20);
+    ctx.stroke();
+
+    // アクティブな玉
+    balls.forEach(b => {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = b.color;
+        ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff";
+        ctx.fillText(`+${Math.floor(b.radius*10)}`, b.x - 10, b.y - b.radius - 5);
+    });
+
+    scoreEl.innerText = score;
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
